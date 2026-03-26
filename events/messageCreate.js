@@ -146,7 +146,7 @@ module.exports = {
         });
         if (!allWhitelisted) {
           try { await message.delete(); } catch (e) {}
-          try { await message.channel.send({ content: `<@${userId}>, links are not allowed in this channel.` }); } catch (e) {}
+          try { const warn = await message.channel.send({ content: `<@${userId}>, links are not allowed in this channel.` }); setTimeout(() => warn.delete().catch(() => {}), 5000); } catch (e) {}
           return;
         }
       }
@@ -163,7 +163,8 @@ module.exports = {
         if (isPhishing) {
           try { await message.delete(); } catch (e) {}
           try {
-            await message.channel.send({ embeds: [embed('error').setDescription(`⚠️ <@${userId}>, a phishing link was detected and removed.`)] });
+            const warn = await message.channel.send({ embeds: [embed('error').setDescription(`⚠️ <@${userId}>, a phishing link was detected and removed.`)] });
+            setTimeout(() => warn.delete().catch(() => {}), 5000);
           } catch (e) {}
           return;
         }
@@ -175,7 +176,7 @@ module.exports = {
     if (antiMention === 'on' && !message.member.permissions.has('ManageMessages')) {
       if (message.mentions.users.size >= 5 || message.mentions.roles.size >= 3) {
         try { await message.delete(); } catch (e) {}
-        try { await message.channel.send({ content: `<@${userId}>, mass mentions are not allowed.` }); } catch (e) {}
+        try { const warn = await message.channel.send({ content: `<@${userId}>, mass mentions are not allowed.` }); setTimeout(() => warn.delete().catch(() => {}), 5000); } catch (e) {}
         return;
       }
     }
@@ -194,7 +195,8 @@ module.exports = {
       if (recent.length >= 5) {
         try {
           await message.member.timeout(60000, 'Anti-spam: too many messages');
-          await message.channel.send({ embeds: [embed('warn').setDescription(`<@${userId}> has been muted for 1 minute (spam detected).`)] });
+          const warn = await message.channel.send({ embeds: [embed('warn').setDescription(`<@${userId}> has been muted for 1 minute (spam detected).`)] });
+          setTimeout(() => warn.delete().catch(() => {}), 5000);
         } catch (e) {}
         messageRates.delete(key);
         return;
