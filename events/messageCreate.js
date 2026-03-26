@@ -6,12 +6,123 @@ const messageRates = new Map(); // guildId:userId -> [timestamps]
 const URL_REGEX = /https?:\/\/[^\s]+/gi;
 const PHISHING_DOMAINS = ['discord.gift', 'discordgift.com', 'steamcommunity.link', 'dicsord.com', 'discorcl.com', 'dlscord.com'];
 
+const PREFIX = '.';
+
 module.exports = {
   name: 'messageCreate',
   async execute(message, client) {
     if (message.author.bot || !message.guild) return;
     const guildId = message.guild.id;
     const userId = message.author.id;
+
+    // ── Prefix commands (.command) ──────────────────────────
+    if (message.content.startsWith(PREFIX)) {
+      const args = message.content.slice(PREFIX.length).trim().split(/\s+/);
+      const commandName = args.shift()?.toLowerCase();
+      if (!commandName) return;
+
+      const command = client.commands.get(commandName);
+      if (!command) return;
+
+      // Parse mentions and strings from args
+      const mentionedUsers = message.mentions.users;
+      const mentionedMembers = message.mentions.members;
+      const mentionedChannels = message.mentions.channels;
+      const mentionedRoles = message.mentions.roles;
+      let userArgIndex = 0;
+      let channelArgIndex = 0;
+      let roleArgIndex = 0;
+
+      // Build a fake interaction object
+      const fakeInteraction = {
+        guild: message.guild,
+        channel: message.channel,
+        member: message.member,
+        user: message.author,
+        client: client,
+        commandName: commandName,
+        replied: false,
+        deferred: false,
+        createdTimestamp: message.createdTimestamp,
+        isChatInputCommand: () => true,
+        isButton: () => false,
+
+        options: {
+          getUser: (name) => {
+            const u = mentionedUsers?.at(userArgIndex);
+            if (u) { userArgIndex++; return u; }
+            return null;
+          },
+          getMember: (name) => {
+            const m = mentionedMembers?.at(userArgIndex);
+            return m || null;
+          },
+          getString: (name) => {
+            // For "reason" or similar, join remaining non-mention args
+            const nonMentionArgs = args.filter(a => !a.match(/^<[@#&!]+\d+>$/));
+            return nonMentionArgs.length > 0 ? nonMentionArgs.join(' ') : null;
+          },
+          getInteger: (name) => {
+            const num = args.find(a => !isNaN(a) && !a.match(/^<[@#&!]+\d+>$/));
+            return num ? parseInt(num) : null;
+          },
+          getNumber: (name) => {
+            const num = args.find(a => !isNaN(a) && !a.match(/^<[@#&!]+\d+>$/));
+            return num ? parseFloat(num) : null;
+          },
+          getBoolean: (name) => {
+            const val = args.find(a => a === 'true' || a === 'false');
+            return val ? val === 'true' : null;
+          },
+          getChannel: (name) => {
+            const c = mentionedChannels?.at(channelArgIndex);
+            if (c) { channelArgIndex++; return c; }
+            return null;
+          },
+          getRole: (name) => {
+            const r = mentionedRoles?.at(roleArgIndex);
+            if (r) { roleArgIndex++; return r; }
+            return null;
+          },
+          getSubcommand: () => args[0] || null,
+        },
+
+        reply: async (data) => {
+          fakeInteraction.replied = true;
+          if (typeof data === 'string') return message.channel.send(data);
+          // Remove ephemeral since we can't do that with normal messages
+          const { ephemeral, fetchReply, flags, ...rest } = (typeof data === 'object' ? data : { content: data });
+          const sent = await message.channel.send(rest);
+          fakeInteraction._lastReply = sent;
+          return sent;
+        },
+        editReply: async (data) => {
+          if (fakeInteraction._lastReply) {
+            if (typeof data === 'string') return fakeInteraction._lastReply.edit({ content: data });
+            const { ephemeral, fetchReply, flags, ...rest } = (typeof data === 'object' ? data : { content: data });
+            return fakeInteraction._lastReply.edit(rest);
+          }
+          return message.channel.send(typeof data === 'string' ? data : data);
+        },
+        followUp: async (data) => {
+          if (typeof data === 'string') return message.channel.send(data);
+          const { ephemeral, flags, ...rest } = (typeof data === 'object' ? data : { content: data });
+          return message.channel.send(rest);
+        },
+        deferReply: async () => {
+          fakeInteraction.deferred = true;
+          fakeInteraction._lastReply = await message.channel.send('⏳ Processing...');
+        },
+      };
+
+      try {
+        await command.execute(fakeInteraction, client);
+      } catch (error) {
+        console.error(`Error executing prefix command ${commandName}:`, error);
+        message.channel.send('❌ An error occurred while executing this command.').catch(() => {});
+      }
+      return; // Don't process security/XP for prefix commands
+    }
 
     // ── Blacklisted words ───────────────────────────────────
     const blacklist = db.getBlacklist(guildId);
